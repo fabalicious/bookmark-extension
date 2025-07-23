@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Bookmark Sync",
+  "version": "1.0.0",
+  "description": "Display and sync your bookmarks on new tab",
+  "permissions": ["bookmarks"],
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  }
+}

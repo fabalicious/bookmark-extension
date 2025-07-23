@@ -1,27 +1,55 @@
 <script>
   import BookmarkLink from './BookmarkLink.svelte';
-  
-  export let folder;
+  import { slide } from 'svelte/transition';
+
+  export let item;
+  export let isRoot = false;
+
+  let isExpanded = false;
+
+  function toggle() {
+    isExpanded = !isExpanded;
+  }
 </script>
 
-<div class="bookmark-folder">
-  <div class="folder-title">{folder.folder || 'Other Bookmarks'}</div>
-  <ul class="bookmark-list">
-    {#each folder.bookmarks as item (item.url || item.title)}
-      <li class="bookmark-item">
-        {#if item.isSubfolder}
-          <div class="subfolder-header" style="margin-left: {(item.depth - 1) * 20}px">
-            📁 {item.title}
-          </div>
-        {:else}
-          <div style="margin-left: {item.depth * 20}px">
-            <BookmarkLink bookmark={item} />
-          </div>
-        {/if}
-      </li>
-    {/each}
-  </ul>
-</div>
+{#if isRoot}
+  <div class="bookmark-folder">
+    <div class="folder-title">{item.folder || 'Other Bookmarks'}</div>
+    <ul class="bookmark-list">
+      {#each item.bookmarks as bookmarkItem}
+        <svelte:self item={bookmarkItem} />
+      {/each}
+    </ul>
+  </div>
+{:else}
+  <li class="bookmark-item">
+    {#if item.isSubfolder}
+      <div
+        class="subfolder-header"
+        style="padding-left: {item.depth * 20}px"
+        on:click={toggle}
+        role="button"
+        tabindex="0"
+        on:keydown={(e) => e.key === 'Enter' && toggle()}
+      >
+        <span class="toggle-icon">{isExpanded ? '▼' : '►'}</span>
+        <span class="folder-icon">📁</span>
+        {item.title}
+      </div>
+      {#if isExpanded && item.children}
+        <ul class="bookmark-list" transition:slide|local>
+          {#each item.children as subItem}
+            <svelte:self item={subItem} />
+          {/each}
+        </ul>
+      {/if}
+    {:else}
+      <div style="padding-left: {item.depth * 20}px">
+        <BookmarkLink bookmark={item} />
+      </div>
+    {/if}
+  </li>
+{/if}
 
 <style>
   .bookmark-folder {
@@ -56,11 +84,25 @@
   }
 
   .subfolder-header {
+    display: flex;
+    align-items: center;
     font-weight: 600;
     color: #2d3748;
     padding: 8px 0;
     font-size: 14px;
+    cursor: pointer;
     border-bottom: 1px solid #e2e8f0;
     margin-bottom: 8px;
+  }
+
+  .toggle-icon {
+    margin-right: 8px;
+    font-size: 12px;
+    width: 12px;
+    text-align: center;
+  }
+
+  .folder-icon {
+    margin-right: 8px;
   }
 </style>

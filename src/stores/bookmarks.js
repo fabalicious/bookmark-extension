@@ -3,35 +3,26 @@ import { writable, derived } from 'svelte/store';
 export const bookmarks = writable([]);
 export const searchQuery = writable('');
 
-// Process bookmark tree recursively to create flat structure with nesting info
-function processBookmarks(nodes, folderName = '', depth = 0) {
+// Process bookmark tree recursively to create a nested structure
+function processBookmarks(nodes, depth = 0) {
   const bookmarks = [];
   
   nodes.forEach(node => {
-    if (node.children && node.children.length > 0) {
-      // This is a folder with children
-      if (depth > 0) {
-        // Add the folder itself as a visual separator (except for root folders)
-        bookmarks.push({
-          isFolder: true,
-          title: node.title,
-          depth: depth,
-          folder: folderName
-        });
-      }
-      
-      // Process children with increased depth
-      const folderBookmarks = processBookmarks(node.children, node.title, depth + 1);
-      bookmarks.push(...folderBookmarks);
-      
+    if (node.children) {
+      // This is a folder
+      bookmarks.push({
+        isSubfolder: true,
+        title: node.title,
+        children: processBookmarks(node.children, depth + 1),
+        depth: depth
+      });
     } else if (node.url && isValidBookmark(node)) {
       // This is a valid bookmark
       bookmarks.push({
         title: node.title,
         url: node.url,
-        folder: folderName,
         depth: depth,
-        isFolder: false
+        isSubfolder: false
       });
     }
   });
@@ -39,35 +30,15 @@ function processBookmarks(nodes, folderName = '', depth = 0) {
   return bookmarks;
 }
 
-// Group flat bookmarks by root folder for display
-function groupBookmarksByRootFolder(flatBookmarks) {
-  const grouped = {};
-  
-  flatBookmarks.forEach(bookmark => {
-    // Find the root folder (depth 1 items, or items with no specific root)
-    let rootFolder = 'Other';
-    
-    // Traverse up to find root folder name
-    if (bookmark.depth === 1) {
-      rootFolder = bookmark.folder;
-    } else if (bookmark.depth > 1) {
-      // For deeper items, we need to identify their root folder
-      // This is a simplification - in practice, we'd track the hierarchy better
-      rootFolder = bookmark.folder.split(' > ')[0] || bookmark.folder;
-    }
-    
-    if (!grouped[rootFolder]) {
-      grouped[rootFolder] = [];
-    }
-    
-    grouped[rootFolder].push(bookmark);
-  });
-  
-  // Convert to array format expected by components
-  return Object.entries(grouped).map(([folderName, bookmarks]) => ({
-    folder: folderName,
-    bookmarks: bookmarks
-  }));
+// Group bookmarks by their top-level folder
+function groupBookmarksByTopLevelFolder(bookmarkNodes) {
+    const topLevelFolders = bookmarkNodes[0]?.children || [];
+    return topLevelFolders.map(folder => {
+        return {
+            folder: folder.title,
+            bookmarks: processBookmarks(folder.children || [])
+        };
+    });
 }
 
 // Check if a bookmark should be displayed
@@ -125,9 +96,7 @@ export const filteredBookmarks = derived(
 export async function loadBookmarks() {
   return new Promise((resolve) => {
     chrome.bookmarks.getTree((bookmarkTreeNodes) => {
-      // Skip the root node and process its children directly
-      const flatBookmarks = processBookmarks(bookmarkTreeNodes[0].children);
-      const groupedBookmarks = groupBookmarksByRootFolder(flatBookmarks);
+      const groupedBookmarks = groupBookmarksByTopLevelFolder(bookmarkTreeNodes);
       bookmarks.set(groupedBookmarks);
       resolve();
     });

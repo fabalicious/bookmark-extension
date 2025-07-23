@@ -33,7 +33,7 @@
     
     <div class="bookmarks-grid">
       {#each $filteredBookmarks as folder (folder.folder)}
-        <BookmarkFolder {folder} />
+        <BookmarkFolder item={folder} isRoot={true} />
       {/each}
     </div>
   {/if}

@@ -3,71 +3,28 @@ import { writable, derived } from 'svelte/store';
 export const bookmarks = writable([]);
 export const searchQuery = writable('');
 
-// Process bookmark tree recursively to create flat structure with nesting info
-function processBookmarks(nodes, folderName = '', depth = 0) {
-  const bookmarks = [];
-  
-  nodes.forEach(node => {
-    if (node.children && node.children.length > 0) {
-      // This is a folder with children
-      if (depth > 0) {
-        // Add the folder itself as a visual separator (except for root folders)
-        bookmarks.push({
-          isFolder: true,
-          title: node.title,
-          depth: depth,
-          folder: folderName
-        });
-      }
-      
-      // Process children with increased depth
-      const folderBookmarks = processBookmarks(node.children, node.title, depth + 1);
-      bookmarks.push(...folderBookmarks);
-      
-    } else if (node.url && isValidBookmark(node)) {
-      // This is a valid bookmark
-      bookmarks.push({
+function processBookmarks(nodes) {
+  return nodes.map((node, index) => {
+    if (node.url) { // It's a bookmark
+      return {
+        id: node.id,
         title: node.title,
         url: node.url,
-        folder: folderName,
-        depth: depth,
-        isFolder: false
-      });
+        parentId: node.parentId,
+        isFolder: false,
+        index: index,
+      };
+    } else if (node.children) { // It's a folder
+      return {
+        id: node.id,
+        title: node.title,
+        parentId: node.parentId,
+        isFolder: true,
+        children: processBookmarks(node.children),
+        index: index,
+      };
     }
-  });
-  
-  return bookmarks;
-}
-
-// Group flat bookmarks by root folder for display
-function groupBookmarksByRootFolder(flatBookmarks) {
-  const grouped = {};
-  
-  flatBookmarks.forEach(bookmark => {
-    // Find the root folder (depth 1 items, or items with no specific root)
-    let rootFolder = 'Other';
-    
-    // Traverse up to find root folder name
-    if (bookmark.depth === 1) {
-      rootFolder = bookmark.folder;
-    } else if (bookmark.depth > 1) {
-      // For deeper items, we need to identify their root folder
-      // This is a simplification - in practice, we'd track the hierarchy better
-      rootFolder = bookmark.folder.split(' > ')[0] || bookmark.folder;
-    }
-    
-    if (!grouped[rootFolder]) {
-      grouped[rootFolder] = [];
-    }
-    
-    grouped[rootFolder].push(bookmark);
-  });
-  
-  // Convert to array format expected by components
-  return Object.entries(grouped).map(([folderName, bookmarks]) => ({
-    folder: folderName,
-    bookmarks: bookmarks
-  }));
+  }).filter(Boolean); // Filter out any undefined entries
 }
 
 // Check if a bookmark should be displayed
@@ -90,34 +47,32 @@ function isValidBookmark(bookmark) {
   return true;
 }
 
+function filterTree(nodes, searchTerm) {
+  if (!searchTerm) return nodes;
+
+  const lowerCaseSearchTerm = searchTerm.toLowerCase();
+
+  return nodes.map(node => {
+    if (node.isFolder) {
+      const filteredChildren = filterTree(node.children, searchTerm);
+      if (filteredChildren.length > 0) {
+        return { ...node, children: filteredChildren };
+      }
+    } else { // It's a bookmark
+      const title = node.title || '';
+      const url = node.url || '';
+      if (title.toLowerCase().includes(lowerCaseSearchTerm) || url.toLowerCase().includes(lowerCaseSearchTerm)) {
+        return node;
+      }
+    }
+  }).filter(Boolean);
+}
+
 // Derived store for filtered bookmarks
 export const filteredBookmarks = derived(
   [bookmarks, searchQuery],
   ([$bookmarks, $searchQuery]) => {
-    if (!$searchQuery.trim()) {
-      return $bookmarks;
-    }
-
-    const searchTerm = $searchQuery.toLowerCase();
-    const filtered = [];
-
-    $bookmarks.forEach(folder => {
-      const matchingBookmarks = folder.bookmarks.filter(bookmark => {
-        const title = bookmark.title || '';
-        const url = bookmark.url || '';
-        return title.toLowerCase().includes(searchTerm) ||
-               url.toLowerCase().includes(searchTerm);
-      });
-
-      if (matchingBookmarks.length > 0) {
-        filtered.push({
-          folder: folder.folder,
-          bookmarks: matchingBookmarks
-        });
-      }
-    });
-
-    return filtered;
+    return filterTree($bookmarks, $searchQuery.trim());
   }
 );
 
@@ -125,11 +80,33 @@ export const filteredBookmarks = derived(
 export async function loadBookmarks() {
   return new Promise((resolve) => {
     chrome.bookmarks.getTree((bookmarkTreeNodes) => {
-      // Skip the root node and process its children directly
-      const flatBookmarks = processBookmarks(bookmarkTreeNodes[0].children);
-      const groupedBookmarks = groupBookmarksByRootFolder(flatBookmarks);
-      bookmarks.set(groupedBookmarks);
+      const processedBookmarks = processBookmarks(bookmarkTreeNodes[0].children);
+      bookmarks.set(processedBookmarks);
       resolve();
     });
+  });
+}
+
+export function removeBookmark(id) {
+  chrome.bookmarks.remove(id, () => {
+    loadBookmarks();
+  });
+}
+
+export function updateBookmark(id, changes) {
+  chrome.bookmarks.update(id, changes, () => {
+    loadBookmarks();
+  });
+}
+
+export function createBookmark(bookmark) {
+  chrome.bookmarks.create(bookmark, () => {
+    loadBookmarks();
+  });
+}
+
+export function moveBookmark(id, destination) {
+  chrome.bookmarks.move(id, destination, () => {
+    loadBookmarks();
   });
 }

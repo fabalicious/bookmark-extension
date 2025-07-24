@@ -1,22 +1,37 @@
 <script>
   import BookmarkLink from './BookmarkLink.svelte';
-  
+  import { moveBookmark } from '../stores/bookmarks.js';
   export let folder;
+
+  let isDragOver = false;
+
+  function handleDrop(e) {
+    e.preventDefault();
+    isDragOver = false;
+    const bookmark = JSON.parse(e.dataTransfer.getData('text/plain'));
+    moveBookmark(bookmark.id, { parentId: folder.id });
+  }
 </script>
 
-<div class="bookmark-folder">
-  <div class="folder-title">{folder.folder || 'Other Bookmarks'}</div>
+<div
+  class="bookmark-folder"
+  class:drag-over={isDragOver}
+  on:dragover|preventDefault={(e) => {
+    isDragOver = true;
+  }}
+  on:dragleave|preventDefault={(e) => {
+    isDragOver = false;
+  }}
+  on:drop={handleDrop}
+>
+  <div class="folder-title">{folder.title || 'Unnamed Folder'}</div>
   <ul class="bookmark-list">
-    {#each folder.bookmarks as item (item.url || item.title)}
+    {#each folder.children as node (node.id)}
       <li class="bookmark-item">
-        {#if item.isSubfolder}
-          <div class="subfolder-header" style="margin-left: {(item.depth - 1) * 20}px">
-            📁 {item.title}
-          </div>
+        {#if node.isFolder}
+          <svelte:self folder={node} />
         {:else}
-          <div style="margin-left: {item.depth * 20}px">
-            <BookmarkLink bookmark={item} />
-          </div>
+          <BookmarkLink bookmark={node} />
         {/if}
       </li>
     {/each}
@@ -36,6 +51,10 @@
   .bookmark-folder:hover {
     transform: translateY(-5px);
     box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  .drag-over {
+    background: rgba(102, 126, 234, 0.2);
   }
 
   .folder-title {
